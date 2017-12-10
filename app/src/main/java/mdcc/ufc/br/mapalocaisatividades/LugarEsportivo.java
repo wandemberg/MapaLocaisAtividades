@@ -8,6 +8,8 @@ import com.google.android.gms.maps.model.LatLng;
 
 public class LugarEsportivo {
 
+
+    private int id;
     private float lat;
     private float lng;
     private String title;
@@ -61,5 +63,13 @@ public class LugarEsportivo {
 
     public void setRuido(int ruido) {
         this.ruido = ruido;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
     }
 }

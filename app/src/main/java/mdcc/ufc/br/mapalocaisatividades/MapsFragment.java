@@ -2,6 +2,7 @@ package mdcc.ufc.br.mapalocaisatividades;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
@@ -9,6 +10,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.location.Criteria;
 import android.location.LocationManager;
+import android.os.AsyncTask;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
@@ -32,8 +34,18 @@ import com.google.gson.Gson;
 
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MapsFragment extends SupportMapFragment implements OnMapReadyCallback {
     private static final String TAG = "MapsFragment";
@@ -43,6 +55,8 @@ public class MapsFragment extends SupportMapFragment implements OnMapReadyCallba
     //OnMapReadyCallback quando o mapa estiver pronto para o uso
 
     private GoogleMap mMap; //
+    private ArrayList<MarkerOptions> mMarkers = new ArrayList<MarkerOptions>();
+    private ArrayList<Marker> todosMarkers = new ArrayList<Marker>();
 
     //Responsável por localizar o dispositivo
     private LocationManager locationManager;
@@ -161,12 +175,16 @@ public class MapsFragment extends SupportMapFragment implements OnMapReadyCallba
             result = "Error: can't show file.";
         }
 
+        //Salva no Json local sem ser no arquivo
+        saveData(getContext(), result);
+
         if (result != null) {
 
 //            Toast.makeText(getActivity(), "JSON: " + result, Toast.LENGTH_LONG).show();
 
             Gson gson = new Gson();
-            LugarEsportivo[] lugar = gson.fromJson(result, LugarEsportivo[].class);
+            //Busca do JSON local
+            LugarEsportivo[] lugar = gson.fromJson(getData(getContext()), LugarEsportivo[].class);
 
             for (int i = 0; i < lugar.length; i++) {
 //                Toast.makeText(getActivity(), "Lugar adicionado: " + lugar[i].getTitle()
@@ -215,18 +233,175 @@ public class MapsFragment extends SupportMapFragment implements OnMapReadyCallba
                 } else {
 
                 }
-                //Adiciona o marcador
-                mMap.addMarker(markerJson);
-
+                //Guarda o markers para atualizá-lo depois
+                mMarkers.add(markerJson);
+                //Adiciona o marcador no mapa
+               Marker mk = mMap.addMarker(markerJson);
+                todosMarkers.add(mk);
             }
             mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(lugar[0].getLat(), lugar[0].getLng())));
 
         }
 
+        Log.d("Teste", "Vai disparar o Timer");
 
+        long delay = 0;
+        long period = 10000;
+
+        Timer myTimer = new Timer();
+        UpdateMarkerTask updateMarkerTask = new UpdateMarkerTask();
+        myTimer.schedule(updateMarkerTask, delay, period);
+
+        Log.d("Teste", "Disparou o Timer");
+
+//        AtualizarMarker atualizarMarker = new AtualizarMarker();
+//        atualizarMarker.execute();
 
     }
 
+    private boolean finalizar = false;
 
+    private class AtualizarMarker extends AsyncTask<Void, Void, Void> {
+        @Override
+        protected Void doInBackground(Void... v) {
+
+            return null;
+        }
+
+        @Override
+        protected void onProgressUpdate(Void... progress) {
+//            setProgressPercent(progress[0]);
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            //            showDialog("Downloaded " + result + " bytes");
+            Log.e("Teste", "Entrou no doInBackground");
+//            while (finalizar != true) {
+            String result;
+//                try {
+//                    AssetManager assets = getContext().getAssets();
+//                    InputStream in_s = assets.open("lugares.json");
+//
+//                    byte[] b = new byte[in_s.available()];
+//                    in_s.read(b);
+//                    result = new String(b);
+//                } catch (Exception e) {
+//                    // e.printStackTrace();
+//                    result = "Error: can't show file.";
+//                }
+
+            //Obtém a string do JSON local
+            result = getData(MapsFragment.this.getContext());
+            if (result != null) {
+
+//            Toast.makeText(getActivity(), "JSON: " + result, Toast.LENGTH_LONG).show();
+
+                Gson gson = new Gson();
+                LugarEsportivo[] lugar = gson.fromJson(result, LugarEsportivo[].class);
+
+
+                    mMap.clear();
+
+                for (int i = 0; i < lugar.length; i++) {
+//                Toast.makeText(getActivity(), "Lugar adicionado: " + lugar[i].getTitle()
+//                        +" lat: " + lugar[i].getLat() +"e lng: " + lugar[i].getLng(), Toast.LENGTH_LONG).show();
+
+                    Log.e("Teste", "Lugar Atualizado: " + lugar[i].getTitle()
+                            + " Ar: " + lugar[i].getQualidadeAr() + "e ruido: " + lugar[i].getRuido());
+
+                    if (i < todosMarkers.size()) {
+                        Log.i("Teste", "i < mMarkers.size() ");
+                        //Obtem o marker com indice passado
+                        MarkerOptions markerJson = mMarkers.get(i);
+//                            Log.e("Teste", "Todos markers: " + mMarkers.toString());
+//                            Log.e("Teste", "Vai buscar marker: " + markerJson);
+
+//                        Collection<MarkerOptions> ma = mMarkers.values();
+//                        for (MarkerOptions m: ma) {
+//                            Log.e("Teste", "Valores dos markers: " +m.getTitle() + ",  " +m.getSnippet());
+//                        }
+
+                        //Se encontrar o marker
+                        if (markerJson != null) {
+
+//                                Log.e("Teste", "valor markerJson" + markerJson);
+                            markerJson.position(new LatLng(lugar[i].getLat(), lugar[i].getLng()));
+                            markerJson.title(lugar[i].getTitle());
+
+                            markerJson.snippet("Qualidade do Ar: " + lugar[i].getQualidadeAr()
+                                    + "\nRuido: " + lugar[i].getRuido());
+
+
+                            if (lugar[i].isLocalApropriado()) {
+                                //Modifica a cor para azul
+                                markerJson.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE));
+                            } else {
+                                markerJson.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+
+                            }
+
+                            Log.e("Teste", "Valor do marker: "+markerJson.getSnippet());
+                            mMap.addMarker(markerJson);
+
+//                            todosMarkers.get(i).showInfoWindow();
+
+                        }
+
+
+                        Log.e("Teste", "Atualizou todos markers");
+                    }
+//                    Toast.makeText(MapsFragment.this.getContext(), "Atualizou Todos Markers", Toast.LENGTH_LONG).show();
+                }
+
+
+            }
+//                try {
+//                    Thread.sleep(15000);//Your Interval after which you want to refresh the screen
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                }
+//            }
+        }
+    }
+
+
+    static String fileName = "myBlog.json";
+
+    public static void saveData(Context context, String mJsonResponse) {
+        try {
+            FileWriter file = new FileWriter(context.getFilesDir().getPath() + "/" + fileName);
+            file.write(mJsonResponse);
+            file.flush();
+            file.close();
+        } catch (IOException e) {
+            Log.e("TAG", "Error in Writing: " + e.getLocalizedMessage());
+        }
+    }
+
+    public static String getData(Context context) {
+        try {
+            File f = new File(context.getFilesDir().getPath() + "/" + fileName);
+            //check whether file exists
+            FileInputStream is = new FileInputStream(f);
+            int size = is.available();
+            byte[] buffer = new byte[size];
+            is.read(buffer);
+            is.close();
+            return new String(buffer);
+        } catch (IOException e) {
+            Log.e("TAG", "Error in Reading: " + e.getLocalizedMessage());
+            return null;
+        }
+    }
+
+    class UpdateMarkerTask extends TimerTask {
+
+        public void run() {
+            AtualizarMarker atualizarMarker = new AtualizarMarker();
+            atualizarMarker.execute();
+        }
+    }
 
 }
