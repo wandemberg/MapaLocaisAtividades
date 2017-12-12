@@ -331,7 +331,8 @@ public class MapsFragment extends SupportMapFragment implements OnMapReadyCallba
                             markerJson.title(lugar[i].getTitle());
 
                             markerJson.snippet("Qualidade do Ar: " + lugar[i].getQualidadeAr()
-                                    + "\nRuido: " + lugar[i].getRuido());
+                                    + "\nRuido: " + lugar[i].getRuido()
+                                    + "\nBom local : " + lugar[i].isLocalApropriado());
 
 
                             if (lugar[i].isLocalApropriado()) {

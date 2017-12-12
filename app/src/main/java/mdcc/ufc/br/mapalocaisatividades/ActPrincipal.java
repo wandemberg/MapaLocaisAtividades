@@ -50,17 +50,24 @@ public class ActPrincipal extends AppCompatActivity
 
     private FragmentManager fragmentManager; //Recupera os fragmentos de janelas
 
-    private static final String TAG = "MainActivity";
+    private static final String TAG = "Teste";
     private IMqttToken token;
     private MqttConnectOptions options;
     private MqttAndroidClient client;
+    private String ipServidor = "192.168.25.20";
+    private String portaServidor = "1883";
+    private String protocoloServidor = "tcp";
+    //Tópico que deseja se inscrever
     private final String topic = "HelloWorld";
+    //Tópico do segundo sensor que deseja se inscrever
+    private final String topicSensor2 = "noise2";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_act_principal);
 
+        //Aplicação se conecta ao Broker e se inscrever nos tópicos selecionados
         conectarBrokerMqtt();
 
         //Barra principal lá de cima
@@ -102,8 +109,7 @@ public class ActPrincipal extends AppCompatActivity
         //Todo : Check why it wasn't connecting to test.mosquitto.org. Isn't that a public broker.
         //Todo : .check why client.subscribe was throwing NullPointerException  even on doing subToken.waitForCompletion()  for Async                  connection estabishment. and why it worked on subscribing from within client.connect’s onSuccess(). SO
         String clientId = MqttClient.generateClientId();
-        client =
-                new MqttAndroidClient(this.getApplicationContext(), "tcp://192.168.25.20:1883",
+        client = new MqttAndroidClient(this.getApplicationContext(), protocoloServidor+"://"+ipServidor+":"+ portaServidor,
                         clientId);
 
         try {
@@ -118,7 +124,7 @@ public class ActPrincipal extends AppCompatActivity
                     //Subscribing to a topic door/status on broker.hivemq.com
                     client.setCallback((MqttCallback) ActPrincipal.this);
 
-                    int qos = 1;
+                    int qos = 1; //At least once (1) receber pelo menos uma mensagem
                     try {
                         IMqttToken subToken = client.subscribe(topic, qos);
                         subToken.setActionCallback(new IMqttActionListener() {
@@ -145,7 +151,36 @@ public class ActPrincipal extends AppCompatActivity
                         Toast.makeText(ActPrincipal.this, "2 Erro conectar conectarBrokerMqtt: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                         e.printStackTrace();
                     }
+
+                    try {
+                        IMqttToken subToken = client.subscribe(topicSensor2, qos);
+                        subToken.setActionCallback(new IMqttActionListener() {
+                            @Override
+                            public void onSuccess(IMqttToken asyncActionToken) {
+                                // successfully subscribed
+                                Toast.makeText(ActPrincipal.this, "Successfully subscribed to: " + topicSensor2, Toast.LENGTH_SHORT).show();
+
+                            }
+
+                            @Override
+                            public void onFailure(IMqttToken asyncActionToken,
+                                                  Throwable exception) {
+                                // The subscription could not be performed, maybe the user was not
+                                // authorized to subscribe on the specified topic e.g. using wildcards
+                                Toast.makeText(ActPrincipal.this, "Couldn't subscribe to: " + topicSensor2, Toast.LENGTH_SHORT).show();
+
+                            }
+                        });
+                    } catch (MqttException e) {
+                        e.printStackTrace();
+                        Toast.makeText(ActPrincipal.this, "1 Erro conectar conectarBrokerMqtt: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    } catch (NullPointerException e) {
+                        Toast.makeText(ActPrincipal.this, "2 Erro conectar conectarBrokerMqtt: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        e.printStackTrace();
+                    }
                 }
+
+
 
                 @Override
                 public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
@@ -225,7 +260,10 @@ public class ActPrincipal extends AppCompatActivity
 
         if (client != null) {
             try {
+                //Identifica que não quer mais estar inscrito nos tópicos
                 client.unsubscribe(topic);
+                client.unsubscribe(topicSensor2);
+                //Fecha a conexão
                 client.disconnect();
                 Toast.makeText(ActPrincipal.this, "Fechou a conexão", Toast.LENGTH_LONG).show();
 
@@ -257,9 +295,11 @@ public class ActPrincipal extends AppCompatActivity
 //        else {
 //            doorImage.setImageResource(R.drawable.open_door);
 //        }
-        Toast.makeText(ActPrincipal.this, "Topic: "+topic+"\nMessage: "+message, Toast.LENGTH_LONG).show();
 
-        String result;
+//        Toast.makeText(ActPrincipal.this, "Topic: "+topic+"\nMessage: "+message, Toast.LENGTH_LONG).show();
+        Log.i(TAG,"Topic: "+topic+"\nMessage: "+message);
+
+                String result;
 //        try {
 //            AssetManager assets = ActPrincipal.this.getAssets();
 //            InputStream in_s = assets.open("lugares.json");
@@ -305,7 +345,7 @@ public class ActPrincipal extends AppCompatActivity
 
                     if (nomeSensor.equals("Air")) {
                         lugar[i].setQualidadeAr(Integer.parseInt(valorMsgSensor));
-                    } else if(nomeSensor.equals("Noise")) {
+                    } else if(nomeSensor.equals("noise2")) {
                         lugar[i].setRuido(Integer.parseInt(valorMsgSensor));
                     } else { //Tratar a mensagem de HelloWorld
                         lugar[i].setQualidadeAr(Integer.parseInt(valorMsgSensor));
@@ -362,14 +402,8 @@ public class ActPrincipal extends AppCompatActivity
 //                        InputStream in_s = assets.open("lugares.json");
 //
 //                        byte[] b = new byte[in_s.available()];
-//                        in_s.read(b);
-//                        result = new String(b);
-//                    } catch (Exception e) {
-//                        // e.printStackTrace();
-//                        result = "Error: can't show file.";
-//                    }
-
-                    Toast.makeText(ActPrincipal.this, "Atualizou dados de idSensor: " + idSensor + ", Ar: " + lugar[i].getQualidadeAr(), Toast.LENGTH_LONG).show();
+//                    Toast.makeText(ActPrincipal.this, "Atualizou dados de idSensor: " + idSensor + ", Ar: " + lugar[i].getQualidadeAr(), Toast.LENGTH_LONG).show();
+                    Log.i(TAG, "Atualizou dados de idSensor: " + idSensor + ", Ar: " + lugar[i].getQualidadeAr());
 
                     break;
                 }
@@ -427,6 +461,13 @@ public class ActPrincipal extends AppCompatActivity
 
     public boolean calcularLocalProprio(LugarEsportivo lugar){
         if (lugar.getQualidadeAr() <= 50 || lugar.getRuido() >= 200) {
+//                        in_s.read(b);
+//                        result = new String(b);
+//                    } catch (Exception e) {
+//                        // e.printStackTrace();
+//                        result = "Error: can't show file.";
+//                    }
+
             return false;
         } else  {
             return true;
