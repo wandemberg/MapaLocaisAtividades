@@ -61,12 +61,25 @@ public class MapsFragment extends SupportMapFragment implements OnMapReadyCallba
     //Responsável por localizar o dispositivo
     private LocationManager locationManager;
 
+    //Timer que atualiza o mapa
+    private Timer myTimer;
+    private UpdateMarkerTask updateMarkerTask;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getMapAsync(this);
     }
 
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+
+        if (updateMarkerTask != null)
+            updateMarkerTask.cancel();
+        if (myTimer != null)
+            myTimer.cancel();
+    }
 
     /**
      * Manipulates the map once available.
@@ -243,16 +256,17 @@ public class MapsFragment extends SupportMapFragment implements OnMapReadyCallba
 
         }
 
-        Log.d("Teste", "Vai disparar o Timer");
+        Log.d(TAG, "Vai disparar o Timer");
 
         long delay = 0;
         long period = 10000;
 
-        Timer myTimer = new Timer();
-        UpdateMarkerTask updateMarkerTask = new UpdateMarkerTask();
+        //Removi para gerar o gráfico do artigo
+        myTimer = new Timer();
+        updateMarkerTask = new UpdateMarkerTask();
         myTimer.schedule(updateMarkerTask, delay, period);
 
-        Log.d("Teste", "Disparou o Timer");
+        Log.d(TAG, "Disparou o Timer");
 
 //        AtualizarMarker atualizarMarker = new AtualizarMarker();
 //        atualizarMarker.execute();

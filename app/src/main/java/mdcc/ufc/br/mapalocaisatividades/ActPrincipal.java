@@ -1,9 +1,19 @@
 package mdcc.ufc.br.mapalocaisatividades;
 
-import android.app.Activity;
+import android.Manifest;
+import android.app.AlertDialog;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.TaskStackBuilder;
 import android.content.Context;
-import android.content.res.AssetManager;
+import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.support.annotation.NonNull;
+import android.support.annotation.RequiresApi;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
 import android.support.design.widget.NavigationView;
@@ -11,15 +21,16 @@ import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.app.NotificationCompat;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.widget.ImageView;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.Toast;
 
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.stream.JsonWriter;
@@ -41,27 +52,41 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.List;
 
 public class ActPrincipal extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener, MqttCallback {
 
+    private static final int MY_PERMISSIONS_REQUEST_READ_WRITE_FILE = 20;
     private FragmentManager fragmentManager; //Recupera os fragmentos de janelas
 
     private static final String TAG = "Teste";
     private IMqttToken token;
     private MqttConnectOptions options;
     private MqttAndroidClient client;
+//    private String ipServidor = "10.99.12.69";
     private String ipServidor = "192.168.25.20";
+
     private String portaServidor = "1883";
     private String protocoloServidor = "tcp";
     //Tópico que deseja se inscrever
-    private final String topic = "HelloWorld";
+    private final String topic = "air2";
     //Tópico do segundo sensor que deseja se inscrever
     private final String topicSensor2 = "noise2";
+    private int limeteQualidadeAr = 50;
+    private int limeteRuido = 180;
+    private int maxQualidadeAr = 100;
+    private  int maxRuido = 300;
+    private EditText valorSensorAr;
+    private EditText valorSensorRuido;
+    //Configurar valores
+    private AlertDialog alerta;
+    private String nomeArquivoMsgRecebidas = "senseTeste100Sensores20min.csv";
+    //Contador do número de msgs recebidas.
+    private long count = 0;
+    private File arquivoMsgRecebidas;
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -93,7 +118,108 @@ public class ActPrincipal extends AppCompatActivity
         //Confirmar a transação
         transaction.commitAllowingStateLoss();
 
+        NavigationView nv = (NavigationView) findViewById(R.id.nav_view);
+        nv.setNavigationItemSelectedListener(new NavigationView.OnNavigationItemSelectedListener() {
+            @Override
+            public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+
+                int id = item.getItemId();
+
+                if (id == R.id.nav_camera){
+
+                    AlertDialog.Builder configurar = new AlertDialog.Builder(ActPrincipal.this);
+                    View view = getLayoutInflater().inflate(R.layout.dialog_sensor, null);
+                    valorSensorAr = (EditText) view.findViewById(R.id.valorAr);
+                    valorSensorRuido = (EditText) view.findViewById(R.id.valorRuido);
+                    Button botaoOk = (Button) view.findViewById(R.id.btOk);
+                    botaoOk.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            if (!valorSensorAr.getText().toString().isEmpty()
+                                    && !valorSensorRuido.getText().toString().isEmpty()) {
+
+                                    if ( Integer.parseInt(valorSensorAr.getText().toString()) >= 0 &&
+                                            Integer.parseInt(valorSensorAr.getText().toString()) <= maxQualidadeAr &&
+                                        Integer.parseInt(valorSensorRuido.getText().toString()) >= 0 &&
+                                        Integer.parseInt(valorSensorRuido.getText().toString()) <= maxRuido) {
+                                        limeteQualidadeAr = Integer.parseInt(valorSensorAr.getText().toString());
+                                        limeteRuido = Integer.parseInt(valorSensorRuido.getText().toString());
+                                        alerta.cancel();
+                                    } else {
+                                        AlertDialog.Builder dialogo = new AlertDialog.Builder(ActPrincipal.this);
+                                        dialogo.setTitle("Aviso");
+                                        dialogo.setMessage("Valor máximo 100 para sensor de ar e 300 para sensor de ruido." );
+                                        dialogo.setNeutralButton("OK", null);
+                                        dialogo.show();
+                                    }
+                            } else {
+                                AlertDialog.Builder dialogo = new AlertDialog.Builder(ActPrincipal.this);
+                                dialogo.setTitle("Aviso");
+                                dialogo.setMessage("Valores dos sensores estão vazios." );
+                                dialogo.setNeutralButton("OK", null);
+                                dialogo.show();
+                            }
+
+                        }
+                    });
+
+                    configurar.setView(view);
+                    alerta = configurar.create();
+                    alerta.show();
+
+                    return false;
+                }
+
+                return true;
+            }
+        });
+
+      //Para forçar a permissão de gravar o arquivo externo
+        int permission = getApplicationContext().checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE);
+        Log.e(TAG, "Permissao: " + permission);
+        Toast.makeText(ActPrincipal.this, "Permissao: " + permission, Toast.LENGTH_SHORT).show();
+        if (permission == -1) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    MY_PERMISSIONS_REQUEST_READ_WRITE_FILE);
+
+        }
+        permission = getApplicationContext().checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE);
+        Log.e(TAG, "Após Permissao: " + permission);
+        //Criar o arquivo que será gravadas as mensagens recebidas
+        arquivoMsgRecebidas = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), nomeArquivoMsgRecebidas);
+
+//        //Criar notificação
+//        NotificationCompat.Builder mBuilder =
+//                (NotificationCompat.Builder) new NotificationCompat.Builder(this)
+//                        .setSmallIcon(R.drawable.ic_menu_camera)
+//                        .setContentTitle("My notification")
+//                        .setContentText("Hello World!");
+//        // Creates an explicit intent for an Activity in your app
+//        Intent resultIntent = new Intent(this, ResultActivity.class);
+//
+//// The stack builder object will contain an artificial back stack for the
+//// started Activity.
+//// This ensures that navigating backward from the Activity leads out of
+//// your application to the Home screen.
+//        TaskStackBuilder stackBuilder = TaskStackBuilder.create(this);
+//// Adds the back stack for the Intent (but not the Intent itself)
+//        stackBuilder.addParentStack(ResultActivity.class);
+//// Adds the Intent that starts the Activity to the top of the stack
+//        stackBuilder.addNextIntent(resultIntent);
+//        PendingIntent resultPendingIntent =
+//                stackBuilder.getPendingIntent(
+//                        0,
+//                        PendingIntent.FLAG_UPDATE_CURRENT
+//                );
+//        mBuilder.setContentIntent(resultPendingIntent);
+//        NotificationManager mNotificationManager =
+//                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+//// mId allows you to update the notification later on.
+//        mNotificationManager.notify(10, mBuilder.build());
+
     }
+
 
     //Método que conecta ao Broker
     public void conectarBrokerMqtt(){
@@ -208,6 +334,7 @@ public class ActPrincipal extends AppCompatActivity
         }
     }
 
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -223,11 +350,38 @@ public class ActPrincipal extends AppCompatActivity
         int id = item.getItemId();
 
         //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
+
+        if (id == R.id.action_sobre) {
+
+            AlertDialog.Builder dialogo = new AlertDialog.Builder(ActPrincipal.this);
+            dialogo.setTitle("Aviso");
+            dialogo.setMessage("Marcadores Azuis indicam bons locais e Vermelhos ruins locais para prática esportiva." );
+            dialogo.setNeutralButton("OK", null);
+            dialogo.show();
             return true;
         }
 
+
         return super.onOptionsItemSelected(item);
+    }
+
+    /* Checks if external storage is available for read and write */
+    public boolean isExternalStorageWritable() {
+        String state = Environment.getExternalStorageState();
+        if (Environment.MEDIA_MOUNTED.equals(state)) {
+            return true;
+        }
+        return false;
+    }
+
+    /* Checks if external storage is available to at least read */
+    public boolean isExternalStorageReadable() {
+        String state = Environment.getExternalStorageState();
+        if (Environment.MEDIA_MOUNTED.equals(state) ||
+                Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)) {
+            return true;
+        }
+        return false;
     }
 
     @SuppressWarnings("StatementWithEmptyBody")
@@ -287,17 +441,16 @@ public class ActPrincipal extends AppCompatActivity
         * */
 //        ImageView doorImage = (ImageView)findViewById(R.id.door_image);
 
-        Log.d("door",message.toString());
+        //REMOVI para teste
+//        Log.d(TAG,message.toString());
 
-//        if(message.toString().equals("close")){
-//            doorImage.setImageResource(R.drawable.closed_door);
-//        }
-//        else {
-//            doorImage.setImageResource(R.drawable.open_door);
-//        }
 
 //        Toast.makeText(ActPrincipal.this, "Topic: "+topic+"\nMessage: "+message, Toast.LENGTH_LONG).show();
-        Log.i(TAG,"Topic: "+topic+"\nMessage: "+message);
+
+
+        //REMOVI para teste
+//        Log.i(TAG,"Topic: "+topic+"\nMessage: "+message);
+
 
                 String result;
 //        try {
@@ -329,6 +482,11 @@ public class ActPrincipal extends AppCompatActivity
             String valorMsgSensor = parteRecebida[2].split("=")[1];
             String timeStampSensor = parteRecebida[3].split("=")[1];
 
+
+            //Salvar dados no arquivo externo para testes de confiabilidade realizado
+            //salvarTeste(nomeSensor,idSensor,timeStampSensor, valorMsgSensor);
+
+
 //            Toast.makeText(ActPrincipal.this, "Vai atualizar dados de idSensor: " + idSensor, Toast.LENGTH_LONG).show();
 
 
@@ -343,7 +501,7 @@ public class ActPrincipal extends AppCompatActivity
                 if (idSensor.equals(String.valueOf(lugar[i].getId()))) {
 //                    Toast.makeText(ActPrincipal.this, "Encontrou um sensor com idSensor: " + idSensor, Toast.LENGTH_LONG).show();
 
-                    if (nomeSensor.equals("Air")) {
+                    if (nomeSensor.equals("air2")) {
                         lugar[i].setQualidadeAr(Integer.parseInt(valorMsgSensor));
                     } else if(nomeSensor.equals("noise2")) {
                         lugar[i].setRuido(Integer.parseInt(valorMsgSensor));
@@ -351,11 +509,10 @@ public class ActPrincipal extends AppCompatActivity
                         lugar[i].setQualidadeAr(Integer.parseInt(valorMsgSensor));
                     }
 
-                    Log.i("Teste", "local proprio: " + calcularLocalProprio(lugar[i]));
+                    //REMOVI para teste
+//                    Log.i("Teste", "local proprio: " + calcularLocalProprio(lugar[i]));
 
                     lugar[i].setLocalApropriado(calcularLocalProprio(lugar[i]));
-
-//                    gson.
 
                     //Atualizar os dados no JSON
 //                    JSONObject jsonResultado = new JSONObject(result);
@@ -377,9 +534,10 @@ public class ActPrincipal extends AppCompatActivity
 //
 //                    myWriter(listaSalvar, gson);
 
-                    Log.i("Teste", "JSON lugar[i].getQualidadeAr(): " + lugar[i].getQualidadeAr());
-                    Log.i("Teste", "JSON arrResultado.get(i).toString(): " + arrResultado.get(i).toString());
-                    Log.i("Teste", "JSON resultado: " + arrResultado.toString());
+                    //REMOVI para teste
+//                    Log.i("Teste", "JSON lugar[i].getQualidadeAr(): " + lugar[i].getQualidadeAr());
+//                    Log.i("Teste", "JSON arrResultado.get(i).toString(): " + arrResultado.get(i).toString());
+//                    Log.i("Teste", "JSON resultado: " + arrResultado.toString());
 
                     saveData(ActPrincipal.this, arrResultado.toString());
 
@@ -403,7 +561,9 @@ public class ActPrincipal extends AppCompatActivity
 //
 //                        byte[] b = new byte[in_s.available()];
 //                    Toast.makeText(ActPrincipal.this, "Atualizou dados de idSensor: " + idSensor + ", Ar: " + lugar[i].getQualidadeAr(), Toast.LENGTH_LONG).show();
-                    Log.i(TAG, "Atualizou dados de idSensor: " + idSensor + ", Ar: " + lugar[i].getQualidadeAr());
+
+                    //REMOVI para teste
+//                    Log.i(TAG, "Atualizou dados de idSensor: " + idSensor + ", Ar: " + lugar[i].getQualidadeAr());
 
                     break;
                 }
@@ -411,6 +571,49 @@ public class ActPrincipal extends AppCompatActivity
 
 
             }
+        }
+    }
+
+//    protected void createNotification(String status, String title, String content) {
+//        NotificationManager manager;
+//        manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+//        Notification.Builder builder = new Notification.Builder(this);
+//        builder.setTicker(status);
+//        builder.setContentTitle(title);
+//        builder.setContentText(content);
+//        builder.setSmallIcon(R.drawable.ic_launcher);
+//        Intent intent = new Intent(this, NotificationHandler.class);
+//        PendingIntent pIntent = PendingIntent.getActivity(this, 0, intent, 0);
+//        builder.setContentIntent(pIntent);
+//        Notification notification = builder.build();
+//        manager.notify(R.string.app_name, notification);
+//    }
+
+    public void salvarTeste(String nomeSensor, String idSensor, String timeStampSensor, String valorMsgSensor){
+        String filename = nomeArquivoMsgRecebidas;
+        count++;
+        String string = "\"" + nomeSensor + "\"" + ";" + "\"" + idSensor + "\"" + ";" + "\"" + count + "\"" + ";" + "\"" + timeStampSensor + "\""
+                + ";" + "\"" + valorMsgSensor + "\"";
+        FileOutputStream outputStream;
+
+        try {
+            if (isExternalStorageWritable()){
+
+//                outputStream = openFileOutput(filename, Context.MODE_PRIVATE);
+                outputStream = new FileOutputStream(arquivoMsgRecebidas, true);
+                StringBuffer texto = new StringBuffer();
+                texto.append(string + " \n");
+
+                outputStream.write(texto.toString().getBytes());
+                outputStream.close();
+                //REMOVI para teste
+//                    Log.e(TAG, "Salvou dados no arquivo");
+            }else {
+                Log.e(TAG, "Não montado");
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, e.getMessage());
         }
     }
 
@@ -460,7 +663,7 @@ public class ActPrincipal extends AppCompatActivity
     }
 
     public boolean calcularLocalProprio(LugarEsportivo lugar){
-        if (lugar.getQualidadeAr() <= 50 || lugar.getRuido() >= 200) {
+        if (lugar.getQualidadeAr() <= limeteQualidadeAr || lugar.getRuido() >= limeteRuido) {
 //                        in_s.read(b);
 //                        result = new String(b);
 //                    } catch (Exception e) {
